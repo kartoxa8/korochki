@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Регистрация — Корочки.есть</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <header class="header" id="app-header"></header>
+
+    <main class="main">
+      <div class="card card-narrow">
+        <h1 class="card-title">Регистрация</h1>
+        <p class="page-subtitle" style="margin-bottom:18px;">
+          Заполните поля, чтобы создать учетную запись.
+        </p>
+
+        <form id="register-form" novalidate>
+          <div class="form-group">
+            <label class="label" for="login">Логин</label>
+            <input
+              class="input"
+              id="login"
+              name="login"
+              autocomplete="username"
+              placeholder="латиница и цифры, не менее 6 символов"
+            />
+            <small class="field-error"></small>
+          </div>
+
+          <div class="form-group">
+            <label class="label" for="password">Пароль</label>
+            <input
+              class="input"
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              placeholder="минимум 8 символов"
+            />
+            <small class="field-error"></small>
+          </div>
+
+          <div class="form-group">
+            <label class="label" for="fio">ФИО</label>
+            <input
+              class="input"
+              id="fio"
+              name="fio"
+              placeholder="Иванов Иван Иванович"
+            />
+            <small class="field-error"></small>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="label" for="phone">Телефон</label>
+              <input
+                class="input"
+                id="phone"
+                name="phone"
+                inputmode="tel"
+                placeholder="8(XXX)XXX-XX-XX"
+              />
+              <small class="field-error"></small>
+            </div>
+
+            <div class="form-group">
+              <label class="label" for="email">Email</label>
+              <input
+                class="input"
+                id="email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@example.com"
+              />
+              <small class="field-error"></small>
+            </div>
+          </div>
+
+          <button class="btn btn-block" type="submit" id="submit-btn">
+            Создать пользователя
+          </button>
+
+          <p class="form-footer">
+            Уже зарегистрированы?
+            <a href="login.html">Вход</a>
+          </p>
+        </form>
+      </div>
+    </main>
+
+    <footer class="footer" id="app-footer"></footer>
+
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/validators.js"></script>
+    <script>
+      (function () {
+        const Api = window.KorApi;
+        const App = window.KorApp;
+        const V = window.KorValidators;
+
+        const form = document.getElementById('register-form');
+        const login = document.getElementById('login');
+        const password = document.getElementById('password');
+        const fio = document.getElementById('fio');
+        const phone = document.getElementById('phone');
+        const email = document.getElementById('email');
+        const submit = document.getElementById('submit-btn');
+
+        App.applyPhoneMask(phone);
+
+        const checks = [
+          V.bind(login, V.login),
+          V.bind(password, V.password),
+          V.bind(fio, V.fio),
+          V.bind(phone, V.phone),
+          V.bind(email, V.email),
+        ];
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const errors = checks.map((c) => c()).filter(Boolean);
+          if (errors.length) {
+            App.toast('Проверьте корректность заполнения формы', 'error');
+            return;
+          }
+
+          App.setButtonLoading(submit, true);
+          try {
+            await Api.register({
+              login: login.value.trim(),
+              password: password.value,
+              fio: fio.value.trim(),
+              phone: phone.value.trim(),
+              email: email.value.trim(),
+            });
+            App.toast('Пользователь создан. Теперь войдите в систему.', 'success');
+            setTimeout(() => (location.href = 'login.html'), 700);
+          } catch (err) {
+            App.setButtonLoading(submit, false);
+            if (err.code === 'LOGIN_TAKEN') {
+              const errorEl = login.parentElement.querySelector('.field-error');
+              if (errorEl) errorEl.textContent = err.message;
+              login.classList.add('is-error');
+              login.focus();
+            }
+            App.toast(err.message, 'error');
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

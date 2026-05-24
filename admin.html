@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Панель администратора — Корочки.есть</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <header class="header" id="app-header"></header>
+
+    <main class="main">
+      <h1 class="page-title">Панель администратора</h1>
+      <p class="page-subtitle">
+        Просмотр и обработка заявок пользователей. Изменяйте статус заявки по
+        мере прохождения обучения.
+      </p>
+
+      <div class="toolbar">
+        <input
+          class="input"
+          id="filter-search"
+          placeholder="🔍 Поиск по ФИО / логину / курсу..."
+        />
+        <select class="select" id="filter-status">
+          <option value="">Все статусы</option>
+          <option value="Новая">Новая</option>
+          <option value="Идет обучение">Идет обучение</option>
+          <option value="Обучение завершено">Обучение завершено</option>
+        </select>
+        <select class="select" id="filter-course">
+          <option value="">Все курсы</option>
+        </select>
+        <button class="btn btn-ghost" id="reset-filters">Сбросить</button>
+      </div>
+
+      <div id="summary" style="font-size:13.5px;color:var(--text-muted);margin-bottom:10px;"></div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Пользователь</th>
+              <th>Курс</th>
+              <th>Дата начала</th>
+              <th>Оплата</th>
+              <th>Статус</th>
+              <th>Создана</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination" id="pagination"></div>
+    </main>
+
+    <footer class="footer" id="app-footer"></footer>
+
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+    <script>
+      (function () {
+        const Api = window.KorApi;
+        const App = window.KorApp;
+        const session = App.requireAuth('admin');
+        if (!session) return;
+
+        const PAGE_SIZE = 7;
+
+        const searchEl = document.getElementById('filter-search');
+        const statusEl = document.getElementById('filter-status');
+        const courseEl = document.getElementById('filter-course');
+        const resetBtn = document.getElementById('reset-filters');
+        const tbody = document.getElementById('tbody');
+        const pagination = document.getElementById('pagination');
+        const summary = document.getElementById('summary');
+
+        Api.COURSES.forEach((c) => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          courseEl.appendChild(opt);
+        });
+
+        let all = [];
+        let page = 1;
+
+        function badge(status) {
+          if (status === 'Новая') return '<span class="badge badge-new">Новая</span>';
+          if (status === 'Идет обучение')
+            return '<span class="badge badge-progress">Идет обучение</span>';
+          return '<span class="badge badge-done">Обучение завершено</span>';
+        }
+
+        function filtered() {
+          const q = searchEl.value.trim().toLowerCase();
+          const status = statusEl.value;
+          const course = courseEl.value;
+          return all.filter((a) => {
+            if (status && a.status !== status) return false;
+            if (course && a.course !== course) return false;
+            if (q) {
+              const haystack = [
+                a.user?.fio,
+                a.user?.login,
+                a.user?.email,
+                a.course,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+              if (!haystack.includes(q)) return false;
+            }
+            return true;
+          });
+        }
+
+        function render() {
+          const list = filtered();
+          const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+          if (page > totalPages) page = totalPages;
+          const slice = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+          summary.textContent = list.length
+            ? `Показано ${slice.length} из ${list.length} ${pluralize(list.length, 'заявки', 'заявок', 'заявок')}`
+            : 'Заявки не найдены';
+
+          if (!slice.length) {
+            tbody.innerHTML = `
+              <tr><td colspan="7">
+                <div class="empty">
+                  <div class="empty-icon">🔍</div>
+                  <p>По заданным фильтрам ничего не найдено.</p>
+                </div>
+              </td></tr>`;
+          } else {
+            tbody.innerHTML = slice
+              .map((a) => {
+                const user = a.user || { fio: '—', login: '—', email: '' };
+                return `
+                  <tr data-id="${a.id}">
+                    <td>
+                      <div style="font-weight:600;">${App.escapeHtml(user.fio)}</div>
+                      <div style="font-size:12px;color:var(--text-muted);">${App.escapeHtml(user.login)}${user.email ? ' · ' + App.escapeHtml(user.email) : ''}</div>
+                    </td>
+                    <td>${App.escapeHtml(a.course)}</td>
+                    <td>${App.escapeHtml(a.startDate)}</td>
+                    <td>${App.escapeHtml(a.payment)}</td>
+                    <td>${badge(a.status)}</td>
+                    <td>${App.formatDate(a.createdAt)}</td>
+                    <td>
+                      <div class="table-actions">
+                        ${actionButtonsFor(a)}
+                      </div>
+                    </td>
+                  </tr>`;
+              })
+              .join('');
+          }
+
+          renderPagination(totalPages);
+        }
+
+        function actionButtonsFor(a) {
+          const next = [];
+          if (a.status === 'Новая') {
+            next.push({ to: 'Идет обучение', label: '▶ Начать обучение' });
+          } else if (a.status === 'Идет обучение') {
+            next.push({ to: 'Обучение завершено', label: '✓ Завершить' });
+            next.push({ to: 'Новая', label: '↺ Вернуть в новые', ghost: true });
+          } else if (a.status === 'Обучение завершено') {
+            next.push({ to: 'Идет обучение', label: '↺ Вернуть в обучение', ghost: true });
+          }
+          return next
+            .map(
+              (n) =>
+                `<button class="btn ${n.ghost ? 'btn-ghost' : 'btn-outline'} btn-sm" data-status="${n.to}">${n.label}</button>`
+            )
+            .join('');
+        }
+
+        function renderPagination(totalPages) {
+          if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+          }
+          const buttons = [];
+          buttons.push(
+            `<button data-p="${page - 1}" ${page === 1 ? 'disabled' : ''}>‹</button>`
+          );
+          for (let i = 1; i <= totalPages; i++) {
+            buttons.push(
+              `<button data-p="${i}" class="${i === page ? 'active' : ''}">${i}</button>`
+            );
+          }
+          buttons.push(
+            `<button data-p="${page + 1}" ${page === totalPages ? 'disabled' : ''}>›</button>`
+          );
+          pagination.innerHTML = buttons.join('');
+        }
+
+        function pluralize(n, one, few, many) {
+          const mod10 = n % 10;
+          const mod100 = n % 100;
+          if (mod10 === 1 && mod100 !== 11) return one;
+          if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+          return many;
+        }
+
+        pagination.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-p]');
+          if (!btn || btn.disabled) return;
+          page = parseInt(btn.dataset.p, 10);
+          render();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        tbody.addEventListener('click', async (e) => {
+          const btn = e.target.closest('button[data-status]');
+          if (!btn) return;
+          const row = btn.closest('tr[data-id]');
+          const id = row?.dataset.id;
+          if (!id) return;
+          const newStatus = btn.dataset.status;
+          try {
+            await Api.setApplicationStatus(id, newStatus);
+            App.toast(`Статус изменен: ${newStatus}`, 'success');
+            const app = all.find((a) => a.id === id);
+            if (app) app.status = newStatus;
+            render();
+          } catch (err) {
+            App.toast(err.message, 'error');
+          }
+        });
+
+        [searchEl, statusEl, courseEl].forEach((el) =>
+          el.addEventListener('input', () => {
+            page = 1;
+            render();
+          })
+        );
+        statusEl.addEventListener('change', () => {
+          page = 1;
+          render();
+        });
+        courseEl.addEventListener('change', () => {
+          page = 1;
+          render();
+        });
+
+        resetBtn.addEventListener('click', () => {
+          searchEl.value = '';
+          statusEl.value = '';
+          courseEl.value = '';
+          page = 1;
+          render();
+          App.toast('Фильтры сброшены', 'info');
+        });
+
+        async function load() {
+          tbody.innerHTML =
+            '<tr><td colspan="7"><div class="empty"><div class="spinner" style="border-color:#eee;border-top-color:#f59e0b;margin:0 auto;"></div><p style="margin-top:12px;">Загрузка заявок...</p></div></td></tr>';
+          try {
+            all = await Api.listAllApplications();
+            render();
+          } catch (err) {
+            App.toast(err.message, 'error');
+          }
+        }
+
+        load();
+      })();
+    </script>
+  </body>
+</html>
