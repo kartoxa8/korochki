@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Мои заявки — Корочки.есть</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <header class="header" id="app-header"></header>
+
+    <main class="main">
+      <div
+        style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;"
+      >
+        <div>
+          <h1 class="page-title">Мои заявки</h1>
+          <p class="page-subtitle" style="margin-bottom:0;">
+            Все ваши заявки на обучение и их статусы.
+          </p>
+        </div>
+        <a class="btn" href="new-application.html">+ Новая заявка</a>
+      </div>
+
+      <div id="list" class="application-list"></div>
+    </main>
+
+    <footer class="footer" id="app-footer"></footer>
+
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+    <script>
+      (function () {
+        const Api = window.KorApi;
+        const App = window.KorApp;
+        const session = App.requireAuth('user');
+        if (!session) return;
+
+        const list = document.getElementById('list');
+
+        function badgeFor(status) {
+          if (status === 'Новая') return '<span class="badge badge-new">Новая</span>';
+          if (status === 'Идет обучение')
+            return '<span class="badge badge-progress">Идет обучение</span>';
+          return '<span class="badge badge-done">Обучение завершено</span>';
+        }
+
+        function render(apps) {
+          if (!apps.length) {
+            list.innerHTML = `
+              <div class="empty">
+                <div class="empty-icon">📋</div>
+                <h3>Заявок пока нет</h3>
+                <p>Создайте первую заявку, чтобы начать обучение.</p>
+                <p style="margin-top:14px;">
+                  <a class="btn" href="new-application.html">Создать заявку</a>
+                </p>
+              </div>`;
+            return;
+          }
+
+          list.innerHTML = apps
+            .map((a) => {
+              const isDone = a.status === 'Обучение завершено';
+              const reviewBlock = a.review
+                ? `<div class="application-review">
+                     <strong>Ваш отзыв:</strong> ${App.escapeHtml(a.review)}
+                   </div>`
+                : '';
+              const reviewBtn = isDone
+                ? `<button class="btn btn-outline btn-sm" data-action="review" data-id="${a.id}">
+                     ${a.review ? '✎ Изменить отзыв' : '★ Оставить отзыв'}
+                   </button>`
+                : `<button class="btn btn-ghost btn-sm" disabled title="Отзыв доступен после завершения обучения">
+                     ★ Оставить отзыв
+                   </button>`;
+
+              return `
+                <article class="application">
+                  <div class="application-head">
+                    <div class="application-course">${App.escapeHtml(a.course)}</div>
+                    ${badgeFor(a.status)}
+                  </div>
+                  <div class="application-meta">
+                    <span>📅 Начало: ${App.escapeHtml(a.startDate)}</span>
+                    <span>💳 ${App.escapeHtml(a.payment)}</span>
+                    <span>📝 Создана: ${App.formatDate(a.createdAt)}</span>
+                  </div>
+                  ${reviewBlock}
+                  <div class="application-actions">
+                    ${reviewBtn}
+                  </div>
+                </article>
+              `;
+            })
+            .join('');
+        }
+
+        async function load() {
+          list.innerHTML =
+            '<div class="empty"><div class="spinner" style="border-color:#eee;border-top-color:#f59e0b;margin:0 auto;"></div><p style="margin-top:12px;">Загрузка...</p></div>';
+          try {
+            const apps = await Api.getMyApplications();
+            render(apps);
+          } catch (err) {
+            App.toast(err.message, 'error');
+          }
+        }
+
+        list.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action="review"]');
+          if (!btn) return;
+          openReviewModal(btn.dataset.id);
+        });
+
+        function openReviewModal(appId) {
+          App.modal({
+            title: 'Отзыв о качестве образовательных услуг',
+            body: `
+              <p style="margin-bottom:10px;color:var(--text-muted);font-size:14px;">
+                Поделитесь впечатлениями о курсе. Это поможет другим студентам.
+              </p>
+              <textarea
+                class="textarea"
+                id="review-text"
+                placeholder="Что понравилось, что можно улучшить?"
+                maxlength="600"
+              ></textarea>
+            `,
+            confirmText: 'Сохранить отзыв',
+            cancelText: 'Отмена',
+            async onConfirm(modalEl) {
+              const text = modalEl.querySelector('#review-text').value.trim();
+              if (!text) {
+                App.toast('Отзыв не может быть пустым', 'warning');
+                return false;
+              }
+              try {
+                await Api.leaveReview(appId, text);
+                App.toast('Спасибо! Отзыв сохранен.', 'success');
+                load();
+              } catch (err) {
+                App.toast(err.message, 'error');
+                return false;
+              }
+            },
+          });
+        }
+
+        load();
+      })();
+    </script>
+  </body>
+</html>

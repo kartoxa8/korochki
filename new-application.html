@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Новая заявка — Корочки.есть</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <header class="header" id="app-header"></header>
+
+    <main class="main">
+      <h1 class="page-title">Новая заявка на обучение</h1>
+      <p class="page-subtitle">
+        Выберите курс, укажите желаемую дату начала и удобный способ оплаты.
+      </p>
+
+      <div class="card card-narrow">
+        <form id="app-form" novalidate>
+          <div class="form-group">
+            <label class="label" for="course">Наименование курса</label>
+            <select class="select" id="course" name="course">
+              <option value="">— выберите курс —</option>
+            </select>
+            <small class="field-error"></small>
+          </div>
+
+          <div class="form-group">
+            <label class="label" for="startDate">Желаемая дата начала</label>
+            <input
+              class="input"
+              id="startDate"
+              name="startDate"
+              inputmode="numeric"
+              placeholder="ДД.ММ.ГГГГ"
+              maxlength="10"
+            />
+            <small class="field-error"></small>
+          </div>
+
+          <div class="form-group">
+            <label class="label">Способ оплаты</label>
+            <div class="radio-group" id="payment-group">
+              <label class="radio-tile">
+                <input type="radio" name="payment" value="Наличными" />
+                <span>💵 Наличными</span>
+              </label>
+              <label class="radio-tile">
+                <input
+                  type="radio"
+                  name="payment"
+                  value="Переводом по номеру телефона"
+                />
+                <span>📱 Перевод по телефону</span>
+              </label>
+            </div>
+            <small class="field-error" id="payment-error"></small>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <a class="btn btn-ghost" href="applications.html">Отмена</a>
+            <button class="btn" type="submit" id="submit-btn" style="flex:1;">
+              Отправить
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <footer class="footer" id="app-footer"></footer>
+
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/validators.js"></script>
+    <script>
+      (function () {
+        const Api = window.KorApi;
+        const App = window.KorApp;
+        const V = window.KorValidators;
+
+        if (!App.requireAuth('user')) return;
+
+        const select = document.getElementById('course');
+        Api.COURSES.forEach((c) => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        });
+
+        const form = document.getElementById('app-form');
+        const dateInput = document.getElementById('startDate');
+        const submit = document.getElementById('submit-btn');
+        const paymentError = document.getElementById('payment-error');
+
+        // авто-маска даты ДД.ММ.ГГГГ
+        dateInput.addEventListener('input', () => {
+          let v = dateInput.value.replace(/\D/g, '').slice(0, 8);
+          if (v.length > 4) v = v.slice(0, 2) + '.' + v.slice(2, 4) + '.' + v.slice(4);
+          else if (v.length > 2) v = v.slice(0, 2) + '.' + v.slice(2);
+          dateInput.value = v;
+        });
+
+        const checkCourse = V.bind(select, (v) =>
+          v ? null : 'Выберите курс из списка'
+        );
+        const checkDate = V.bind(dateInput, V.dateDMY);
+
+        const checkPayment = () => {
+          const v = form.payment && form.payment.value;
+          paymentError.textContent = v ? '' : 'Выберите способ оплаты';
+          return v ? null : 'Выберите способ оплаты';
+        };
+        form.querySelectorAll('input[name="payment"]').forEach((el) =>
+          el.addEventListener('change', checkPayment)
+        );
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const errors = [checkCourse(), checkDate(), checkPayment()].filter(Boolean);
+          if (errors.length) {
+            App.toast('Проверьте поля заявки', 'error');
+            return;
+          }
+
+          App.setButtonLoading(submit, true);
+          try {
+            await Api.createApplication({
+              course: select.value,
+              startDate: dateInput.value.trim(),
+              payment: form.payment.value,
+            });
+            App.toast('Заявка отправлена администратору на рассмотрение', 'success');
+            setTimeout(() => (location.href = 'applications.html'), 700);
+          } catch (err) {
+            App.setButtonLoading(submit, false);
+            App.toast(err.message, 'error');
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
